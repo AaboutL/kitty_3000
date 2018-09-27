@@ -1,0 +1,6 @@
+cmake-build-debug/
+cmake-build-release/
+.idea/
+models/train_lbf_good_all.xml
+models/
+build/

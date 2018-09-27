@@ -1,0 +1,104 @@
+#include <cstdlib>
+#include <stdexcept>
+#include <iostream>
+#include <fstream>
+#include <string>
+#include <vector>
+#include <sstream>
+#include <opencv2/opencv.hpp>
+#include <opencv2/face.hpp>
+#include "facemarkLBF.h"
+#include "utilities.h"
+
+using namespace std;
+
+void read_file(const std::string& line, const std::string& prefix, cv::Mat& image, cv::Rect& rect, std::vector<cv::Point2f>& facial_points);
+
+int main(int argc,char ** argv)
+{
+    ext::FacemarkLBF::Params params = ext::FacemarkLBF::Params();
+    params.cascade_face = "../models/haarcascade_frontalface_alt.xml";
+    params.n_landmarks = 32;
+    params.stages_n=7;
+    params.tree_n=8;
+    params.tree_depth=6;
+    params.model_filename = "../models/hfy_1_0518_total_with_hand_ssd_32_aug.xml";
+    params.save_model = true;
+    Ptr<ext::FacemarkTrain> facemark = ext::FacemarkLBF::create(params);
+
+    std::string prefix = "";
+    std::ifstream infile("/home/public/nfs72/face/facial_points/data_for_train/after_liuhai_hand/total_result_ssd_shuffle.txt");
+    if(!infile.is_open()) {
+        std::cout << "file not open" << std::endl;
+        return 0;
+    }
+    int num_file = 0;
+    while(!infile.eof()) {
+		num_file++;
+        std::string line;
+        getline(infile, line);
+        if(line.empty()) continue;
+        cv::Mat image; cv::Rect rect;
+        std::vector<cv::Point2f> facial_points;
+        std::vector<cv::Point2f> shorter_points;
+        read_file(line, prefix, image, rect, facial_points);
+        for (size_t i = 0; i< facial_points.size(); i++) {
+            if(9==i || 19==i || 21==i
+                || 23 == i || 25 == i || 27 == i || 29 == i
+                || 31 == i || 33 == i || 44 == i || 45 == i
+                || 46 == i || 48 == i || 49 == i || 50 == i || 52 == i || 55 == i || 56 == i || 58 == i || 59 == i || 60 == i || 62 == i
+                || 65 == i || 68 == i || 71 == i || 74 == i || 77 == i || 78 == i || 79 == i || 80 == i || 81 == i || 82 == i) {
+                    shorter_points.push_back(facial_points[i]);
+            }
+        }
+
+        cv::Mat gray;
+        if(image.empty()) continue;
+        cv::cvtColor(image, gray, cv::COLOR_RGB2GRAY);
+	cv::Mat noise_img;
+        add_noise(gray, noise_img, 6, 1.0);
+        facemark->addTrainingSample(noise_img, shorter_points, rect);
+//        cv::Mat aug_img;
+//        std::vector<cv::Point2f> aug_points;
+//        cv::Rect aug_rect;
+//        augment_transform(gray, shorter_points, aug_img, aug_points, aug_rect);
+//        facemark->addTrainingSample(aug_img, aug_points, rect);
+//        std::cout << "aug" << std::endl;
+
+//        if(num_file++ == 20)
+//            break;
+    }
+    std::cout << "feed data end, " << num_file << "images fed!" << std::endl;
+
+	cout<<"training..."<<endl;
+	facemark->training();
+
+	return EXIT_SUCCESS;
+}
+
+void read_file(const std::string& line, const std::string& prefix, cv::Mat& image, cv::Rect& rect, std::vector<cv::Point2f>& facial_points) {
+    size_t pos = line.find(' ');
+    std::string name = std::string(line, 0, pos);
+    std::string img_name = prefix + name;
+    image = cv::imread(img_name);
+    std::cout << img_name << std::endl;
+
+    // find first ')'
+    size_t pos_bbox = line.find(')');
+    std::string bbox = std::string(line, pos + 2, pos_bbox - pos - 2);
+    std::istringstream ss1(bbox);
+    std::string x, y, width, height;
+    ss1 >> x >> y >> width >> height;
+    rect = cv::Rect(atoi(x.c_str()), atoi(y.c_str()), atoi(width.c_str()), atoi(height.c_str()));
+
+    //find second ')'
+    size_t pos_lm = line.find(')', pos_bbox + 3);
+    std::string landmark = std::string(line, pos_bbox + 3, pos_lm - pos_bbox -3);
+    std::istringstream ss2(landmark);
+    while(!ss2.eof()){
+        std::string x1, y1;
+        ss2 >> x1 >> y1;
+        facial_points.push_back(cv::Point2f((float)atof(x1.c_str()), (float)atof(y1.c_str())));
+    }
+    std::cout << "read file end" << std::endl;
+}
